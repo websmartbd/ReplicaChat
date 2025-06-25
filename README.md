@@ -1,4 +1,4 @@
-# AI Chat Replica
+# Replica Chat
 
 A web application that allows users to chat with an AI that can replicate messaging styles based on conversation history. Built with Node.js, Express, and Google's Generative AI.
 
