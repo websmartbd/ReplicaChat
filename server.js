@@ -6,8 +6,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const crypto = require('crypto');
 const path = require('path');
 
-// IMPORTANT: Add your Google Gemini API key here
-const API_KEY = 'your-api-key';
+// You can set a fallback API key here for local testing if needed.
+const API_KEY = process.env.GEMINI_API_KEY || '';
 
 const app = express();
 const port = 3000;
@@ -18,12 +18,24 @@ app.use(express.static('public'));
 
 const upload = multer({ dest: 'uploads/' });
 
-let genAI;
-try {
-    genAI = new GoogleGenerativeAI(API_KEY);
-} catch (error) {
-    console.error("Failed to initialize GoogleGenerativeAI. Is the API key valid?");
-}
+// Middleware to initialize genAI instance per request
+const googleAIWrapper = (req, res, next) => {
+    const apiKey = req.headers['x-api-key'];
+
+    if (!apiKey && !API_KEY) {
+        return res.status(401).json({ error: 'API key is missing. Please provide it in the x-api-key header or set it on the server.' });
+    }
+    
+    const keyToUse = apiKey || API_KEY;
+
+    try {
+        req.genAI = new GoogleGenerativeAI(keyToUse);
+        next();
+    } catch (error) {
+        console.error("Failed to initialize GoogleGenerativeAI with the provided key.", error);
+        return res.status(400).json({ error: 'The provided API key is invalid.' });
+    }
+};
 
 let chatSession = null;
 let currentSystemInstruction = '';
@@ -102,8 +114,6 @@ app.post('/upload', upload.single('chatfile'), (req, res) => {
 
         const chatData = JSON.parse(fileContent);
 
-
-
         const participants = chatData.participants.map(p => p.name);
         
         if (participants.length < 2) {
@@ -132,7 +142,7 @@ app.post('/upload', upload.single('chatfile'), (req, res) => {
     }
 });
 
-app.post('/create-replica', async (req, res) => {
+app.post('/create-replica', googleAIWrapper, async (req, res) => {
     const { uploadId, selectedFriend, yourName } = req.body;
 
     if (!uploadId || !selectedFriend || !yourName) {
@@ -158,7 +168,7 @@ app.post('/create-replica', async (req, res) => {
         // === CHUNKED SUMMARIZATION ===
         const CHUNK_SIZE = 400;
         const chunkSummaries = [];
-        const analysisModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const analysisModel = req.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const totalChunks = Math.ceil(messages.length / CHUNK_SIZE);
         chunkProgress[uploadId] = { current: 0, total: totalChunks };
         for (let i = 0; i < messages.length; i += CHUNK_SIZE) {
@@ -275,117 +285,103 @@ ${behavioralRules}
             throw new Error("Could not create a valid chat history.");
         }
         
-        const chatModel = genAI.getGenerativeModel({
+        const chatModel = req.genAI.getGenerativeModel({
             model: "gemini-1.5-flash",
             systemInstruction: instruction
         });
 
         chatSession = chatModel.startChat({ history: normalizedHistory });
         currentSystemInstruction = instruction;
+        uploadCache[uploadId].systemInstruction = instruction;
 
-        delete uploadCache[uploadId]; // Clean up the cache
-        delete chunkProgress[uploadId]; // Clean up progress
+        // The replica is ready. We no longer need the full chat data in memory for this session.
+        // The systemInstruction is cached, and that's what's needed for the chat.
+        delete uploadCache[uploadId].messages;
+        delete uploadCache[uploadId].participants;
+
         res.json({ message: 'Replica created successfully.' });
 
     } catch (error) {
-        console.error("Error creating replica:", error);
+        console.error('Error creating replica:', error);
         delete chunkProgress[uploadId];
         res.status(500).json({ error: 'Failed to create replica.' });
     }
 });
 
-app.post('/message', async (req, res) => {
-    const { userInput, selectedFriend, recentMessages } = req.body;
-    try {
-        const response = await generateResponse(userInput, genAI.getGenerativeModel({ model: "gemini-1.5-flash" }), selectedFriend, recentMessages);
-        res.json({ response });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to generate response.' });
-    }
-});
-
-app.post('/chat', async (req, res) => {
-    if (!genAI) {
-        return res.status(500).json({ error: 'AI model not initialized. Check your API key.' });
-    }
-    if (!chatSession) {
-        return res.status(400).json({ error: 'Chat session not started. Please upload a file first.' });
+app.post('/chat', googleAIWrapper, async (req, res) => {
+    const { message, uploadId } = req.body;
+    if (!message) {
+        return res.status(400).json({ error: 'No message provided.' });
     }
 
-    const userMessage = req.body.message;
-    const uploadId = req.body.uploadId;
-    const selectedFriend = req.body.selectedFriend;
-    const yourName = req.body.yourName;
-
-    // Retrieve a wider context from history
-    const contextRange = 10; // Number of messages before and after
-    let retrievedMessages = [];
-    if (uploadId && userMessage) {
-        try {
-            const searchRes = await fetch(`http://localhost:3000/search-history`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uploadId, query: userMessage, friendName: selectedFriend, yourName, contextRange })
-            });
-            const data = await searchRes.json();
-            if (data.results && data.results.length > 0) {
-                retrievedMessages = data.results;
-            }
-        } catch (e) {}
+    if (!uploadId || !uploadCache[uploadId] || !uploadCache[uploadId].systemInstruction) {
+        return res.status(400).json({ error: 'No active replica session. Please create one first.' });
     }
-
-    // Build the strict persona/memory prompt
-    let memoryBlock = '';
-    if (retrievedMessages.length > 0) {
-        memoryBlock = `\n\n**REAL MESSAGES FROM YOUR MEMORY (use only these for factual answers):**\n${retrievedMessages.join('\n')}`;
-    } else {
-        memoryBlock = `\n\n**REAL MESSAGES FROM YOUR MEMORY:**\n(No relevant memories found. If you don't remember, say so. Never make up facts.)`;
+    
+    // Re-initialize chat session if it's null or if the instruction has changed
+    if (!chatSession || currentSystemInstruction !== uploadCache[uploadId].systemInstruction) {
+        currentSystemInstruction = uploadCache[uploadId].systemInstruction;
+        const model = req.genAI.getGenerativeModel({
+            model: "gemini-1.5-flash",
+            systemInstruction: currentSystemInstruction,
+        });
+        chatSession = model.startChat({
+            history: [], // Optionally, you could load chat history here
+            generationConfig: {
+                maxOutputTokens: 200,
+            },
+        });
     }
-
-    // Re-inject persona, style, and memory on every turn
-    const personaPrompt = currentSystemInstruction + memoryBlock + `\n\n**REMEMBER:** You are ${selectedFriend}. Only use your real memories above for factual answers. Never make up facts. Always reply in your true style and thinking.`;
-    const fullPrompt = `${personaPrompt}\n\nUser: ${userMessage}\n${selectedFriend}:`;
 
     try {
-        const result = await chatSession.sendMessage(fullPrompt);
-        const response = await result.response;
-        const text = response.text();
-        res.json({ reply: text });
+        const result = await chatSession.sendMessage(message);
+        const reply = await result.response.text();
+        res.json({ reply });
     } catch (error) {
-        console.error('AI chat error:', error);
+        console.error('Chat error:', error);
         res.status(500).json({ error: 'Failed to get a response from the AI.' });
     }
 });
 
-app.post('/cleanup-chunks', (req, res) => {
-    const { uploadId } = req.body;
-    if (!uploadId) return res.status(400).json({ error: 'Missing uploadId' });
-    const uploadsDir = path.join(__dirname, 'uploads');
+app.post('/generate-response', googleAIWrapper, async (req, res) => {
+    const { userInput, selectedFriend, recentMessages } = req.body;
     try {
-        const files = fs.readdirSync(uploadsDir);
-        files.forEach(file => {
-            if (file.startsWith(`summary_${uploadId}_`)) {
-                fs.unlinkSync(path.join(uploadsDir, file));
-            }
-        });
-        // Also delete the full history JSON file
-        const fullHistoryFile = path.join(uploadsDir, `full_history_${uploadId}.json`);
-        if (fs.existsSync(fullHistoryFile)) {
-            fs.unlinkSync(fullHistoryFile);
-        }
-        res.json({ message: 'Chunk summaries and history cleaned up.' });
-    } catch (err) {
-        console.error('Cleanup error:', err);
-        res.status(500).json({ error: 'Failed to clean up chunk summaries.' });
+        const response = await generateResponse(userInput, req.genAI.getGenerativeModel({ model: "gemini-1.5-flash" }), selectedFriend, recentMessages);
+        res.json({ response });
+    } catch (error) {
+        console.error('Error generating response:', error);
+        res.status(500).json({ error: 'Failed to generate response.' });
     }
+});
+
+app.post('/cleanup', (req, res) => {
+    const { uploadId } = req.body;
+    if (uploadId) {
+        delete uploadCache[uploadId];
+        delete chunkProgress[uploadId];
+        // Optional: Clean up saved files
+        const fullHistoryFile = path.join(__dirname, 'uploads', `full_history_${uploadId}.json`);
+        if (fs.existsSync(fullHistoryFile)) fs.unlinkSync(fullHistoryFile);
+
+        // Clean up summary chunk files
+        // This requires knowing how many chunks were created, which we don't store long-term.
+        // A better approach would be to store chunk files in a directory named after the uploadId and delete the whole directory.
+    }
+    res.status(200).send();
 });
 
 app.get('/replica-progress/:uploadId', (req, res) => {
     const { uploadId } = req.params;
-    if (!chunkProgress[uploadId]) {
-        return res.json({ current: 0, total: 1 });
+    const progress = chunkProgress[uploadId];
+    if (progress) {
+        res.json({
+            current: progress.current,
+            total: progress.total,
+            chunks: progress.current,
+        });
+    } else {
+        res.status(404).json({ error: 'Progress not found for this upload ID.' });
     }
-    res.json(chunkProgress[uploadId]);
 });
 
 app.post('/search-history', (req, res) => {

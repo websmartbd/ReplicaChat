@@ -36,6 +36,13 @@
             color: #1F2937;
             border-radius: 20px 20px 20px 4px;
         }
+        .system-message {
+            text-align: center;
+            color: #EF4444; /* red-500 */
+            font-style: italic;
+            width: 100%;
+            padding: 8px 0;
+        }
         .typing-bubble {
             display: flex;
             align-items: center;
@@ -129,7 +136,16 @@
     <!-- Setup Modal -->
     <div id="setup-modal" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity duration-300">
         <div id="upload-container" class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full transform transition-all duration-300 scale-95 opacity-0">
-            <div id="upload-step">
+            <div id="api-key-step">
+                <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">Enter Your API Key</h1>
+                <p class="text-center text-gray-500 mb-8">Please enter your Gemini API key to continue.</p>
+                <form id="api-key-form" class="flex flex-col items-center">
+                    <input type="password" id="api-key-input" class="w-full px-5 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-400 transition" placeholder="Enter your Gemini API key...">
+                    <button type="submit" class="mt-6 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-full shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition">Save API Key</button>
+                </form>
+                <div id="api-key-status" class="mt-4 text-center font-medium"></div>
+            </div>
+            <div id="upload-step" class="hidden">
                 <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">Create Your AI Replica</h1>
                 <p class="text-center text-gray-500 mb-8">Upload a chat history file to begin.</p>
                 <form id="upload-form" class="flex flex-col items-center">

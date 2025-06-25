@@ -4,6 +4,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalContent = document.getElementById('upload-container'); // Content area within the modal
     const chatContainer = document.getElementById('chat-container');
     
+    // Step 0: API Key
+    const apiKeyStep = document.getElementById('api-key-step');
+    const apiKeyForm = document.getElementById('api-key-form');
+    const apiKeyInput = document.getElementById('api-key-input');
+    const apiKeyStatus = document.getElementById('api-key-status');
+    
     // Step 1: Upload
     const uploadStep = document.getElementById('upload-step');
     const uploadForm = document.getElementById('upload-form');
@@ -35,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressLabel = document.getElementById('progress-label');
 
     // State variables
+    let apiKey = '';
     let uploadId = '';
     let participants = [];
     let selectedFriendName = '';
@@ -68,7 +75,16 @@ document.addEventListener('DOMContentLoaded', () => {
         replicaStatus.textContent = '';
         progressSection.classList.add('hidden');
         selectionStep.classList.add('hidden');
-        uploadStep.classList.remove('hidden');
+        uploadStep.classList.add('hidden');
+        apiKeyStep.classList.add('hidden');
+
+        // Logic on reset
+        if (localStorage.getItem('gemini-api-key')) {
+            uploadStep.classList.remove('hidden');
+        } else {
+            apiKeyStep.classList.remove('hidden');
+        }
+
         messageContainer.innerHTML = '';
         chatTitle.textContent = 'Chat with Replica';
         chatSubtitle.textContent = 'Offline';
@@ -93,14 +109,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     uploadForm.addEventListener('submit', handleUpload);
     createReplicaBtn.addEventListener('click', handleCreateReplica);
+    apiKeyForm.addEventListener('submit', handleApiKeySave);
     backBtn.addEventListener('click', resetUI);
     chatForm.addEventListener('submit', handleSendMessage);
     window.addEventListener('beforeunload', cleanupChunks);
 
     // --- Initial Setup ---
-    showModal();
+    function initialize() {
+        const savedKey = localStorage.getItem('gemini-api-key');
+        if (savedKey) {
+            apiKey = savedKey;
+            apiKeyStep.classList.add('hidden');
+            uploadStep.classList.remove('hidden');
+        } else {
+            apiKeyStep.classList.remove('hidden');
+            uploadStep.classList.add('hidden');
+        }
+        showModal();
+    }
+    initialize();
 
     // --- Event Handlers ---
+    function handleApiKeySave(e) {
+        e.preventDefault();
+        const key = apiKeyInput.value.trim();
+        if (!key) {
+            showError('Please enter an API key.', apiKeyStatus);
+            return;
+        }
+        if (!key.startsWith('AIza')) {
+            showError('That does not look like a valid Google AI API key.', apiKeyStatus);
+            return;
+        }
+
+        apiKey = key;
+        localStorage.setItem('gemini-api-key', key);
+        apiKeyStatus.textContent = 'API Key saved!';
+        apiKeyStatus.style.color = '#16a34a'; // green
+
+        setTimeout(() => {
+            apiKeyStep.classList.add('hidden');
+            uploadStep.classList.remove('hidden');
+        }, 1000);
+    }
+
     async function handleUpload(e) {
         e.preventDefault();
         const fileInput = document.getElementById('chatfile');
@@ -122,7 +174,13 @@ document.addEventListener('DOMContentLoaded', () => {
         uploadStatus.style.color = '#4f46e5'; // Indigo
 
         try {
-            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const response = await fetch('/upload', { 
+                method: 'POST', 
+                body: formData,
+                headers: {
+                    'x-api-key': apiKey
+                }
+            });
             const data = await response.json();
 
             if (!response.ok) {
@@ -162,7 +220,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/create-replica', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey 
+                },
                 body: JSON.stringify({ uploadId, selectedFriend: selectedFriendName, yourName }),
             });
             const data = await response.json();
@@ -210,14 +271,24 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch('/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey
+                },
                 body: JSON.stringify({ message, uploadId }),
             });
+            
             const data = await response.json();
+
+            if (!response.ok) {
+                addMessage(data.error || 'An unknown error occurred.', 'system');
+                return;
+            }
+
             addMessage(data.reply, 'ai');
 
         } catch (error) {
-            addMessage('Sorry, an error occurred. Please try again.', 'system');
+            addMessage('Sorry, a connection error occurred. Please try again.', 'system');
             console.error('Chat error:', error);
         } finally {
             typingIndicator.classList.add('hidden');
@@ -261,35 +332,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addMessage(text, sender) {
-        const messageElement = document.createElement('div');
-        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        if (sender === 'user') {
-            messageElement.className = 'flex justify-end';
-            messageElement.innerHTML = `
-                <div class="message-bubble user-message px-5 py-3 shadow-md">
-                    <p class="text-white">${text}</p>
-                    <div class="text-xs text-white opacity-70 mt-1 text-right">${timestamp}</div>
-                </div>`;
-        } else if (sender === 'ai') {
-            messageElement.className = 'flex justify-start items-end space-x-3';
-            messageElement.innerHTML = `
-                <div class="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center text-gray-600 font-bold">${aiAvatarSmall.textContent}</div>
-                <div class="message-bubble ai-message px-5 py-3 shadow-md">
-                    <p class="text-gray-800">${text}</p>
-                    <div class="text-xs text-gray-500 opacity-70 mt-1 text-right">${timestamp}</div>
-                </div>
-            `;
-        } else if (sender === 'system') {
-            messageElement.className = 'flex justify-center';
-            messageElement.innerHTML = `
-                <div class="message-bubble system-message px-5 py-3 shadow-md">
-                    <p class="text-gray-800">${text}</p>
-                </div>
-            `;
+        const bubble = document.createElement('div');
+
+        if (sender === 'system') {
+            bubble.classList.add('system-message', 'mb-4');
+        } else {
+            bubble.classList.add('p-4', 'rounded-lg', 'shadow-md', 'message-bubble', 'mb-4');
+            const senderClass = sender === 'user' ? 'user-message self-end' : 'ai-message self-start';
+            bubble.classList.add(...senderClass.split(' '));
         }
 
-        messageContainer.prepend(messageElement);
+        const textNode = document.createTextNode(text || ''); // Handle undefined/null text gracefully
+        bubble.appendChild(textNode);
+        
+        messageContainer.prepend(bubble);
+        messageContainer.scrollTop = messageContainer.scrollHeight;
     }
 
     async function cleanupChunks() {
