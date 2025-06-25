@@ -22,7 +22,7 @@ A web application that allows users to chat with an AI that can replicate messag
 1. Clone the repository:
    ```bash
    git clone <repository-url>
-   cd close-2222222
+   cd ReplicaChat
    ```
 
 2. Install dependencies:
