@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const path = require('path');
 
 // IMPORTANT: Add your Google Gemini API key here
-const API_KEY = 'AIzaSyDMgsCkTC9VfizksjhwYIJZChPTTAtCmfo';
+const API_KEY = 'your-api-key';
 
 const app = express();
 const port = 3000;
