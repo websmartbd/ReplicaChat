@@ -409,7 +409,7 @@ app.post('/search-history', (req, res) => {
 });
 
 app.listen(port, () => {
-    console.log(`Server listening at http://localhost:${port}`);
+    console.log(`Server listening at http://127.0.0.1:${port}`);
     if (API_KEY === 'YOUR_GEMINI_API_KEY') {
         console.warn('WARNING: Your Gemini API key is not set in server.js. The AI will not work.');
     }
