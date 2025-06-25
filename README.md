@@ -1,4 +1,4 @@
-# Replica Chat
+# AI Chat Replica
 
 A web application that allows users to chat with an AI that can replicate messaging styles based on conversation history. Built with Node.js, Express, and Google's Generative AI.
 
@@ -30,12 +30,8 @@ A web application that allows users to chat with an AI that can replicate messag
    npm install
    ```
 
-3. Create a `.env` file in the root directory and add your Google Generative AI API key:
+3. Get Your Google Generative AI API key:
    ```
-   GEMINI_API_KEY=your_api_key_here
-   ```
-   
-   Alternatively, you can provide the API key in the request headers as `x-api-key`.
 
 ## Usage
 
