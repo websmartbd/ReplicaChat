@@ -37,27 +37,31 @@ Create AI-powered chatbots that perfectly mimic the messaging style and personal
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/ReplicaChat.git
+   git clone https://github.com/websmartbd/ReplicaChat.git
+   cd ReplicaChat
+   ```
+3. **Open Directory**
+   ```bash
    cd ReplicaChat
    ```
 
-2. **Install dependencies**
+3. **Install dependencies**
    ```bash
    npm install
    ```
 
-3. **Set up environment variables** (optional)
+4. **Set up environment variables** (optional)
    ```bash
    # Create a .env file in the root directory
    GEMINI_API_KEY=your_api_key_here
    ```
 
-4. **Start the server**
+5. **Start the server**
    ```bash
    npm start
    ```
 
-5. **Open your browser**
+6. **Open your browser**
    Navigate to `http://localhost:3000`
 
 ### Development Mode
