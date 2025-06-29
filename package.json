@@ -1,7 +1,7 @@
 {
-  "name": "ai-chat-replica",
+  "name": "ReplicaChat",
   "version": "1.0.0",
-  "description": "A web app to chat with an AI replica of a messaging style from a JSON file.",
+  "description": "A web app to chat with an ReplicaChat of a messaging style from a JSON file.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
