@@ -38,7 +38,6 @@ Create AI-powered chatbots that perfectly mimic the messaging style and personal
 1. **Clone the repository**
    ```bash
    git clone https://github.com/websmartbd/ReplicaChat.git
-   cd ReplicaChat
    ```
 3. **Open Directory**
    ```bash
